@@ -2,6 +2,32 @@
 Add-GPLHeader -Path E:\Temp\Testff\src\ -ProgramName 'AiT' -ProgramDescription 'Another Interval Timer' -Author 'Marc Kassay'
 Add-MITHeader -Path E:\Temp\Testff\src\ -ProgramName 'AiT' -Author 'Marc Kassay'
 #>
+
+function Add-Header {
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $True)]
+        [ValidateNotNullOrEmpty()]
+        [string[]]$Path,
+
+        [Parameter(Mandatory = $False)]
+        [string]$Header,
+
+        [switch]$WhatIf
+    )
+
+    $ConfirmationMessage = New-ConfirmationMessage -Type '' -Header $Header -WhatIf:$WhatIf.IsPresent
+    $Decision = Request-Confirmation -Message $ConfirmationMessage
+
+    if ($Decision -eq $True) {
+        Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
+    }
+    else {
+        Write-Output -InputObject 'Procedure has been cancelled, no files have been modified.'
+    }
+}
+
 function Add-GPLHeader {
     [CmdletBinding()]
     Param
@@ -18,13 +44,13 @@ function Add-GPLHeader {
 
         [Parameter(Mandatory = $False)]
         [string]$Author,
-        
+
         [switch]$WhatIf
     )
-    
+
     $Header = New-Header -Type 'GPL' -Path $Path -ProgramName $ProgramName -ProgramDescription $ProgramDescription -Author $Author
-    $ConfirmationHeader = New-ConfirmationMessage -Type 'GPL' -Header $Header
-    $Decision = Get-Confirmation -Message $ConfirmationHeader
+    $ConfirmationMessage = New-ConfirmationMessage -Type 'GPL' -Header $Header
+    $Decision = Request-Confirmation -Message $ConfirmationMessage
 
     if ($Decision -eq $True) {
         Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
@@ -50,10 +76,10 @@ function Add-MITHeader {
         
         [switch]$WhatIf
     )
-    
-    $Header = New-Header -Type 'MIT' -Path $Path -ProgramName $ProgramName -ProgramDescription $ProgramDescription -Author $Author
+
+    $Header = New-Header -Type 'MIT' -Path $Path -ProgramName $ProgramName -Author $Author
     $ConfirmationHeader = New-ConfirmationMessage -Type 'MIT' -Header $Header
-    $Decision = Get-Confirmation -Message $ConfirmationHeader
+    $Decision = Request-Confirmation -Message $ConfirmationHeader
 
     if ($Decision -eq $True) {
         Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
@@ -64,7 +90,6 @@ function Add-MITHeader {
 }
 
 function New-Header {
-
     [CmdletBinding()]
     [OutputType([String])]
     Param
@@ -106,19 +131,32 @@ function New-Header {
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 "@
     }
     elseif ($Type -eq 'MIT') {
-        $Header = @"
-Copyright ${Year} ${Author}
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     
+        $Header = @"
+    The MIT License (MIT)
+
+    Copyright ${Year} ${Author}
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
 "@
     }
 
@@ -131,7 +169,8 @@ function New-ConfirmationMessage {
     Param
     (
         [Parameter(Mandatory = $True)]
-        [ValidateSet("GPL", "MIT")]
+        [ValidateSet("GPL", "MIT", "")]
+        [AllowEmptyString()]
         [string]$Type,
 
         [Parameter(Mandatory = $True)]
@@ -140,13 +179,27 @@ function New-ConfirmationMessage {
 
         [switch]$WhatIf
     )
-    # TODO: implement WhatIf into message
-    $ConfirmationMessage = @"
-The following ${Type} license will be prepended to all recognized file types:
 
+    # if it's not a custom header, don't PadRight
+    if ($Type.Length -gt 0) {
+        $PaddedType = $Type.PadRight(4)
+    }
+    else {
+        $PaddedType = $Type
+    }
+    
+    if ($WhatIf.IsPresent -eq $False) {
+        $ConfirmationMessage = @"
+The following ${PaddedType}license will be prepended to all recognized file types:
 ${Header}
-
 "@
+    }
+    else {
+        $ConfirmationMessage = @"
+The following ${PaddedType}license *would* be prepended to all recognized file types:
+${Header}
+"@
+    }
 
     $ConfirmationMessage
 }
@@ -165,12 +218,21 @@ function Start-PrependProcess {
         [switch]$WhatIf
     )
     try {
-        # TODO: hmmm...this Test-Path cmd says paths are valid even if they dont exist...
-        #  if ((Test-Path $Path -IsValid)) {
-        #     throw New-Object -TypeName [System.IO.IOException]
-        # }
-        $IsContainer = Resolve-Path $Path | Test-Path -IsValid -PathType Container
+        
+        if ((Test-Path $Path) -eq $False) {
+            if (Test-Path -PathType Container -IsValid) {
+                throw [System.IO.DirectoryNotFoundException]::new()
+            }
+            elseif (Test-Path -PathType Leaf -IsValid) {
+                throw [System.IO.FileNotFoundException]::new()
+            }
+            else {
+                throw [System.IO]::new() 
+            }
+        }
 
+        $IsContainer = Resolve-Path $Path | Test-Path -IsValid -PathType Container
+        
         if ($IsContainer -eq $True) {
             Get-ChildItem -Path $Path -Recurse | ForEach-Object -Process {
                 if ($_.PSIsContainer -eq $False) {
@@ -182,10 +244,20 @@ function Start-PrependProcess {
             Add-PrependContent -Path $Path -Value $Header -WhatIf:$WhatIf.IsPresent 
         }
     }
+    catch [System.IO.DirectoryNotFoundException] {
+        Write-Error -Message 'The following directory cannot be found: '+$Path
+    }
+    catch [System.IO.FileNotFoundException] {
+        Write-Error -Message 'The following file cannot be found: '+$Path
+    }
+    catch [System.IO] {
+        Write-Error -Message 'The following is invalid: '+$Path
+    }
     catch {
         Write-Error -Message 'An error occurred when attempting to prepend the following target: '+$Path
     }
 }
+
 function Add-PrependContent {
     [CmdletBinding()]
     Param
@@ -206,9 +278,9 @@ function Add-PrependContent {
         $FileContents = Get-Content $Path | Out-String
 
         $ValuePrefixedToFile = @"
-$($Brackets.Opening)
+$($Brackets.Opening.Trim())
 ${Value}
-$($Brackets.Closing)
+$($Brackets.Closing.Trim())
 ${FileContents}
 "@
 
@@ -223,12 +295,9 @@ ${FileContents}
         }
     }
 }
-function Add-MITHeader {
-
-}
 
 # ref: http://stackoverflow.com/a/24649481
-function Get-Confirmation {
+function Request-Confirmation {
     Param
     (
         [Parameter(Mandatory = $True, Position = 1)]
@@ -245,7 +314,6 @@ function Get-Confirmation {
     
     $Decision
 }
-#Export-ModuleMember -Function Get-Confirmation
 
 function Get-FileTypeBrackets {
     [CmdletBinding()]
