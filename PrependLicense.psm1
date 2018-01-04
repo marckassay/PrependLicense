@@ -1,5 +1,6 @@
 <# 
 Add-GPLHeader -Path E:\Temp\Testff\src\ -ProgramName 'AiT' -ProgramDescription 'Another Interval Timer' -Author 'Marc Kassay'
+Add-MITHeader -Path E:\Temp\Testff\src\ -ProgramName 'AiT' -Author 'Marc Kassay'
 #>
 function Add-GPLHeader {
     [CmdletBinding()]
@@ -21,9 +22,75 @@ function Add-GPLHeader {
         [switch]$WhatIf
     )
     
+    $Header = New-Header -Type 'GPL' -Path $Path -ProgramName $ProgramName -ProgramDescription $ProgramDescription -Author $Author
+    $ConfirmationHeader = New-ConfirmationMessage -Type 'GPL' -Header $Header
+    $Decision = Get-Confirmation -Message $ConfirmationHeader
+
+    if ($Decision -eq $True) {
+        Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
+    }
+    else {
+        Write-Output -InputObject 'Procedure has been cancelled, no files have been modified.'
+    }
+}
+
+function Add-MITHeader {
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $True)]
+        [ValidateNotNullOrEmpty()]
+        [string[]]$Path,
+
+        [Parameter(Mandatory = $False)]
+        [string]$ProgramName,
+
+        [Parameter(Mandatory = $False)]
+        [string]$Author,
+        
+        [switch]$WhatIf
+    )
+    
+    $Header = New-Header -Type 'MIT' -Path $Path -ProgramName $ProgramName -ProgramDescription $ProgramDescription -Author $Author
+    $ConfirmationHeader = New-ConfirmationMessage -Type 'MIT' -Header $Header
+    $Decision = Get-Confirmation -Message $ConfirmationHeader
+
+    if ($Decision -eq $True) {
+        Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
+    }
+    else {
+        Write-Output -InputObject 'Procedure has been cancelled, no files have been modified.'
+    }
+}
+
+function New-Header {
+
+    [CmdletBinding()]
+    [OutputType([String])]
+    Param
+    (
+        [Parameter(Mandatory = $True)]
+        [ValidateSet("GPL", "MIT")]
+        [string]$Type,
+
+        [Parameter(Mandatory = $True)]
+        [ValidateNotNullOrEmpty()]
+        [string[]]$Path,
+
+        [Parameter(Mandatory = $False)]
+        [string]$ProgramName,
+
+        [Parameter(Mandatory = $False)]
+        [string]$ProgramDescription,
+
+        [Parameter(Mandatory = $False)]
+        [string]$Author
+    )
+
     $Year = (Get-Date).Year
 
-    $Header = @"
+    if ($Type -eq 'GPL') {
+        $Header = @"
     ${ProgramName} - ${ProgramDescription}
     Copyright (C) ${Year} ${Author}
 
@@ -41,45 +108,84 @@ function Add-GPLHeader {
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 "@
+    }
+    elseif ($Type -eq 'MIT') {
+        $Header = @"
+Copyright ${Year} ${Author}
 
-    $Decision = Get-Confirmation -Message @"
-The following GPL license will be prepended to all file types known by this module:
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
-    ${Header}
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+    
 "@
-    if ($Decision -eq $True) {
-        try {
-            # TODO: hmmm...this Test-Path cmd says paths are valid even if they dont exist...
-            #  if ((Test-Path $Path -IsValid)) {
-            #     throw New-Object -TypeName [System.IO.IOException]
-            # }
-
-            $IsContainer = Resolve-Path $Path | Test-Path -IsValid -PathType Container
-
-            if ($IsContainer -eq $True) {
-                Get-ChildItem -Path $Path -Recurse | ForEach-Object -Process {
-                    if ($_.PSIsContainer -eq $False) {
-                        Add-PrependContent -Path $_.FullName -Value $Header -WhatIf:$WhatIf.IsPresent -Verbose:$Verbose.IsPresent
-                    }
-                }
-            }
-            else {
-                Add-PrependContent -Path $Path -Value $Header -WhatIf:$WhatIf.IsPresent -Verbose:$Verbose.IsPresent
-            }
-        }
-        catch [System.IO.IOException] {
-            Write-Error -Message 'The following path given, is invalid: '+$Path
-        } 
-        catch {
-            Write-Error -Message 'An exception occurred when prepending!  Halting operation.'
-        }
     }
-    else {
-        Write-Out -InputObject 'Procedure has been cancelled, no files have been modified.'
-    }
+
+    $Header
 }
 
+function New-ConfirmationMessage {
+    [CmdletBinding()]
+    [OutputType([String])]
+    Param
+    (
+        [Parameter(Mandatory = $True)]
+        [ValidateSet("GPL", "MIT")]
+        [string]$Type,
+
+        [Parameter(Mandatory = $True)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Header,
+
+        [switch]$WhatIf
+    )
+    # TODO: implement WhatIf into message
+    $ConfirmationMessage = @"
+The following ${Type} license will be prepended to all recognized file types:
+
+${Header}
+
+"@
+
+    $ConfirmationMessage
+}
+
+function Start-PrependProcess {
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $True)]
+        [ValidateNotNullOrEmpty()]
+        [string[]]$Path,
+
+        [Parameter(Mandatory = $True)]
+        [string]$Header,
+
+        [switch]$WhatIf
+    )
+    try {
+        # TODO: hmmm...this Test-Path cmd says paths are valid even if they dont exist...
+        #  if ((Test-Path $Path -IsValid)) {
+        #     throw New-Object -TypeName [System.IO.IOException]
+        # }
+        $IsContainer = Resolve-Path $Path | Test-Path -IsValid -PathType Container
+
+        if ($IsContainer -eq $True) {
+            Get-ChildItem -Path $Path -Recurse | ForEach-Object -Process {
+                if ($_.PSIsContainer -eq $False) {
+                    Add-PrependContent -Path $_.FullName -Value $Header -WhatIf:$WhatIf.IsPresent 
+                }
+            }
+        }
+        else {
+            Add-PrependContent -Path $Path -Value $Header -WhatIf:$WhatIf.IsPresent 
+        }
+    }
+    catch {
+        Write-Error -Message 'An error occurred when attempting to prepend the following target: '+$Path
+    }
+}
 function Add-PrependContent {
     [CmdletBinding()]
     Param
@@ -106,16 +212,15 @@ $($Brackets.Closing)
 ${FileContents}
 "@
 
-        Out-File -FilePath $Path -InputObject $ValuePrefixedToFile -WhatIf:$WhatIf.IsPresent -Verbose:$Verbose.IsPresent
-
-        if ($WhatIf.IsPresent -eq $False) {
-            Write-Output -InputObject ("Prefixed to: " + $_.FullName)
-        }
-
-        # $Results
+        Out-File -FilePath $Path -InputObject $ValuePrefixedToFile -WhatIf:$WhatIf.IsPresent
     }
     else {
-        Write-Verbose 'Ignoring unkown file type: '+$Path
+        if ($Verbose.IsPresent) {
+            Write-Verbose ("VERBOSE: Ignoring the operation 'Output to File' on unrecognized target: " + $_.FullName)
+        }
+        if ($WhatIf.IsPresent) {
+            Write-Output -InputObject ("What if: Would ignore the operation 'Output to File' on unrecognized target: " + $_.FullName)
+        }
     }
 }
 function Add-MITHeader {
@@ -168,14 +273,15 @@ function Get-FileTypeBrackets {
 
         $KeyFound = $FileTypeTable.GetEnumerator() | Where-Object -Property Value  -Match $FileExtension | Select-Object -ExpandProperty Name
 
-        $BracketsRaw = $BracketTable[$KeyFound]
-        if ($BracketsRaw) {
+        if ($KeyFound) {
+            $BracketsRaw = $BracketTable[$KeyFound]
             $Brackets = [PSCustomObject]@{
                 Opening = $BracketsRaw.Split(',')[0]
                 Closing = $BracketsRaw.Split(',')[1]
             }
         }
         else {
+            $Brackets = $null
         }
     }
     end {
