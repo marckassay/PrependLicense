@@ -1,8 +1,4 @@
-<# 
-Add-GPLHeader -Path E:\Temp\Testff\src\ -ProgramName 'AiT' -ProgramDescription 'Another Interval Timer' -Author 'Marc Kassay'
-Add-MITHeader -Path E:\Temp\Testff\src\ -ProgramName 'AiT' -Author 'Marc Kassay'
-#>
-
+$SummaryTable = @{}
 function Add-GPLHeader {
     [CmdletBinding()]
     Param
@@ -75,6 +71,10 @@ function Add-Header {
         [Parameter(Mandatory = $True)]
         [string]$Header,
 
+        [Parameter(Mandatory = $True)]
+        [ValidateNotNullOrEmpty()]
+        [string[]]$Include,
+
         [switch]$WhatIf
     )
 
@@ -82,7 +82,7 @@ function Add-Header {
     $Decision = Request-Confirmation -Message $ConfirmationMessage -WhatIf:$WhatIf.IsPresent
 
     if ($Decision -eq $True) {
-        Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
+        Start-PrependProcess -Path $Path -Header $Header -Include $Include -WhatIf:$WhatIf.IsPresent
     }
     else {
         Write-Output -InputObject 'Procedure has been cancelled, no files have been modified.'
@@ -215,6 +215,10 @@ function Start-PrependProcess {
         [Parameter(Mandatory = $True)]
         [string]$Header,
 
+        [Parameter(Mandatory = $False)]
+        [AllowNull()]
+        [string[]]$Include,
+
         [switch]$WhatIf
     )
     try {
@@ -237,7 +241,7 @@ function Start-PrependProcess {
         if ($IsContainer -eq $True) {
             Get-ChildItem -Path $Path -Recurse | ForEach-Object -Process {
                 if ($_.PSIsContainer -eq $False) {
-                    Add-PrependContent -Path $_.FullName -Value $Header -WhatIf:$WhatIf.IsPresent 
+                    Add-PrependContent -Path $_.FullName -Value $Header -Include $Include -WhatIf:$WhatIf.IsPresent
                 }
             }
         }
@@ -246,6 +250,8 @@ function Start-PrependProcess {
         }
 
         Format-SummaryTable -WhatIf:$WhatIf.IsPresent
+        # clear table in-case if used again in same session...
+        $SummaryTable.Clear()
     }
     catch [System.IO.DirectoryNotFoundException] {
         Write-Error -Message ("The following directory cannot be found: $Path")
@@ -272,10 +278,19 @@ function Add-PrependContent {
         [Parameter(Mandatory = $True)]
         [string]$Value,
 
+        [Parameter(Mandatory = $False)]
+        [AllowNull()]
+        [string[]]$Include,
+
         [switch]$WhatIf
     )
-    
+
     $Brackets = Get-Item $Path | Select-Object { $_.Extension } -ExpandProperty Extension | Get-FileTypeBrackets
+
+    # if Include is defined and it does not contains current Extension, assign null to it...
+    if ($Include -ne $null -and $Include.Split(',').Contains('*' + $_.Extension) -eq $False) {
+        $Brackets = $null
+    }
 
     if ($Brackets) {
         $FileContents = Get-Content $Path | Out-String
@@ -304,7 +319,6 @@ ${FileContents}
     }
 }
 
-$SummaryTable = @{}
 function Set-SummaryTable {
     Param
     (
@@ -382,6 +396,7 @@ function Get-FileTypeBrackets {
     )
 
     process {
+    
         $KeyFound = $FileTypeTable.GetEnumerator() | Where-Object -Property Value  -Match $FileExtension | Select-Object -ExpandProperty Name
 
         if ($KeyFound) {
