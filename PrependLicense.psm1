@@ -3,31 +3,6 @@ Add-GPLHeader -Path E:\Temp\Testff\src\ -ProgramName 'AiT' -ProgramDescription '
 Add-MITHeader -Path E:\Temp\Testff\src\ -ProgramName 'AiT' -Author 'Marc Kassay'
 #>
 
-function Add-Header {
-    [CmdletBinding()]
-    Param
-    (
-        [Parameter(Mandatory = $True)]
-        [ValidateNotNullOrEmpty()]
-        [string[]]$Path,
-
-        [Parameter(Mandatory = $True)]
-        [string]$Header,
-
-        [switch]$WhatIf
-    )
-
-    $ConfirmationMessage = New-ConfirmationMessage -Type '' -Header $Header -WhatIf:$WhatIf.IsPresent
-    $Decision = Request-Confirmation -Message $ConfirmationMessage -WhatIf:$WhatIf.IsPresent
-
-    if ($Decision -eq $True) {
-        Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
-    }
-    else {
-        Write-Output -InputObject 'Procedure has been cancelled, no files have been modified.'
-    }
-}
-
 function Add-GPLHeader {
     [CmdletBinding()]
     Param
@@ -80,6 +55,31 @@ function Add-MITHeader {
     $Header = New-Header -Type 'MIT' -Path $Path -ProgramName $ProgramName -Author $Author
     $ConfirmationHeader = New-ConfirmationMessage -Type 'MIT' -Header $Header -WhatIf:$WhatIf.IsPresent
     $Decision = Request-Confirmation -Message $ConfirmationHeader -WhatIf:$WhatIf.IsPresent
+
+    if ($Decision -eq $True) {
+        Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
+    }
+    else {
+        Write-Output -InputObject 'Procedure has been cancelled, no files have been modified.'
+    }
+}
+
+function Add-Header {
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(Mandatory = $True)]
+        [ValidateNotNullOrEmpty()]
+        [string[]]$Path,
+
+        [Parameter(Mandatory = $True)]
+        [string]$Header,
+
+        [switch]$WhatIf
+    )
+
+    $ConfirmationMessage = New-ConfirmationMessage -Type '' -Header $Header -WhatIf:$WhatIf.IsPresent
+    $Decision = Request-Confirmation -Message $ConfirmationMessage -WhatIf:$WhatIf.IsPresent
 
     if ($Decision -eq $True) {
         Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
@@ -400,4 +400,4 @@ function Get-FileTypeBrackets {
     }
 }
 # "imports" $FileTypeTable and $BracketTable
-Invoke-Expression -Command (Get-Content -Raw -Path $PSScriptRoot'\FileTypeBracketTables.ps1')
+Invoke-Expression -Command (Get-Content -Raw -Path $PSScriptRoot'\PrependLicenseVariables.ps1')
