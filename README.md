@@ -41,9 +41,9 @@ PrependLicense is a PowerShell module that automates prepending license headers 
 
     The `Include` parameter is required since this the required `Header` parameter value can only have one style of commenting.  This parameter takes an array of strings.
     ```powershell
-    $MarcsLicense = @"
-    # AS OF: JAN2018:
-    # DO NOT: 'SELL', 'TRADE' or 'EXCHANGE' CODE BELOW!!!
+    $ $MarcsLicense = @"
+    // AS OF: JAN2018:
+    // DO NOT: 'SELL', 'TRADE' or 'EXCHANGE' CODE BELOW!!!
     "@
-    $ Add-Header -Path .\src\ -Header $MarcsLicense -Include '*.ts'
+    $ Add-Header -Path .\src\ -Header $MarcsLicense -Include '*.ts, *.js'
     ```
