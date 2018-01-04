@@ -18,7 +18,7 @@ function Add-Header {
     )
 
     $ConfirmationMessage = New-ConfirmationMessage -Type '' -Header $Header -WhatIf:$WhatIf.IsPresent
-    $Decision = Request-Confirmation -Message $ConfirmationMessage
+    $Decision = Request-Confirmation -Message $ConfirmationMessage -WhatIf:$WhatIf.IsPresent
 
     if ($Decision -eq $True) {
         Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
@@ -49,8 +49,8 @@ function Add-GPLHeader {
     )
 
     $Header = New-Header -Type 'GPL' -Path $Path -ProgramName $ProgramName -ProgramDescription $ProgramDescription -Author $Author
-    $ConfirmationMessage = New-ConfirmationMessage -Type 'GPL' -Header $Header
-    $Decision = Request-Confirmation -Message $ConfirmationMessage
+    $ConfirmationMessage = New-ConfirmationMessage -Type 'GPL' -Header $Header -WhatIf:$WhatIf.IsPresent
+    $Decision = Request-Confirmation -Message $ConfirmationMessage -WhatIf:$WhatIf.IsPresent
 
     if ($Decision -eq $True) {
         Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
@@ -78,8 +78,8 @@ function Add-MITHeader {
     )
 
     $Header = New-Header -Type 'MIT' -Path $Path -ProgramName $ProgramName -Author $Author
-    $ConfirmationHeader = New-ConfirmationMessage -Type 'MIT' -Header $Header
-    $Decision = Request-Confirmation -Message $ConfirmationHeader
+    $ConfirmationHeader = New-ConfirmationMessage -Type 'MIT' -Header $Header -WhatIf:$WhatIf.IsPresent
+    $Decision = Request-Confirmation -Message $ConfirmationHeader -WhatIf:$WhatIf.IsPresent
 
     if ($Decision -eq $True) {
         Start-PrependProcess -Path $Path -Header $Header -WhatIf:$WhatIf.IsPresent
@@ -227,12 +227,13 @@ function Start-PrependProcess {
                 throw [System.IO.FileNotFoundException]::new()
             }
             else {
-                throw [System.IO]::new() 
+                throw [System.IO.IOException]::new() 
             }
         }
 
         $IsContainer = Resolve-Path $Path | Test-Path -IsValid -PathType Container
         
+
         if ($IsContainer -eq $True) {
             Get-ChildItem -Path $Path -Recurse | ForEach-Object -Process {
                 if ($_.PSIsContainer -eq $False) {
@@ -247,16 +248,16 @@ function Start-PrependProcess {
         Format-SummaryTable -WhatIf:$WhatIf.IsPresent
     }
     catch [System.IO.DirectoryNotFoundException] {
-        Write-Error -Message 'The following directory cannot be found: '+$Path
+        Write-Error -Message ("The following directory cannot be found: $Path")
     }
     catch [System.IO.FileNotFoundException] {
-        Write-Error -Message 'The following file cannot be found: '+$Path
+        Write-Error -Message ("The following file cannot be found: $Path")
     }
-    catch [System.IO] {
-        Write-Error -Message 'The following is invalid: '+$Path
+    catch [System.IO.IOException] {
+        Write-Error -Message ("The following is invalid: $Path")
     }
     catch {
-        Write-Error -Message 'An error occurred when attempting to prepend the following target: '+$Path
+        Write-Error -Message ("An error occurred when attempting to prepend the following target: $Path")
     }
 }
 
@@ -318,7 +319,7 @@ function Set-SummaryTable {
         ($SummaryTable[$FileExtension].Count)++
     }
     else {
-        $YesNo = if ($Modified -eq $True) {'Yes'}else {'No'}
+        $YesNo = if ($Modified -eq $True) {'Yes'} else {'No'}
         $NewEntry = [PSCustomObject]@{Count = 1; Modified = $YesNo}
         $SummaryTable.Add($FileExtension, $NewEntry)
     }
@@ -333,9 +334,11 @@ function Format-SummaryTable {
     
     if ($WhatIf.IsPresent) {
         Write-Output @"
-Since the 'WhatIf' was flagged, below is the *would have* summary:
+
+Since the 'WhatIf' was flagged, below is the what would of happened summary:
 "@
     }
+    # $p.getenumerator() | Sort-Object -Property Value -Descending
     Format-Table @{Label = "Found Files"; Expression = {($_.Name)}}, `
     @{Label = "Count"; Expression = {($_.Value.Count)}}, `
     @{Label = "Modified"; Expression = {($_.Value.Modified)}}`
@@ -347,10 +350,17 @@ function Request-Confirmation {
     Param
     (
         [Parameter(Mandatory = $True, Position = 1)]
-        [string]$Message
+        [string]$Message,
+
+        [switch]$WhatIf
     )
     
-    $Question = 'Do you want to proceed?'
+    if ($WhatIf.IsPresent -eq $false) {
+        $Question = 'Do you want to proceed?'
+    }
+    else {
+        $Question = 'Do you want to simulate what will happen?'
+    }
 
     $Choices = New-Object Collections.ObjectModel.Collection[Management.Automation.Host.ChoiceDescription]
     $Choices.Add((New-Object Management.Automation.Host.ChoiceDescription -ArgumentList "&Yes"))
@@ -372,26 +382,13 @@ function Get-FileTypeBrackets {
     )
 
     process {
-        $FileTypeTable = @{ 
-            1 = '*.ts, *.js, *.cp'
-            2 = '*.psm1, *.psd1, *.ps1'
-            3 = '*.html'
-            4 = '*.scss, *.css'
-        }
-        $BracketTable = @{ 
-            1 = '/**, */'
-            2 = '<#, #>'
-            3 = '<!--,-->'
-            4 = '/*,*/'
-        }
-
         $KeyFound = $FileTypeTable.GetEnumerator() | Where-Object -Property Value  -Match $FileExtension | Select-Object -ExpandProperty Name
 
         if ($KeyFound) {
             $BracketsRaw = $BracketTable[$KeyFound]
             $Brackets = [PSCustomObject]@{
-                Opening = $BracketsRaw.Split(',')[0]
-                Closing = $BracketsRaw.Split(',')[1]
+                Opening = $BracketsRaw.Split(', ')[0]
+                Closing = $BracketsRaw.Split(', ')[1]
             }
         }
         else {
@@ -402,3 +399,5 @@ function Get-FileTypeBrackets {
         $Brackets
     }
 }
+# "imports" $FileTypeTable and $BracketTable
+Invoke-Expression -Command (Get-Content -Raw -Path $PSScriptRoot'\FileTypeBracketTables.ps1')
