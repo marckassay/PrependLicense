@@ -11,7 +11,7 @@ function Add-Header {
         [ValidateNotNullOrEmpty()]
         [string[]]$Path,
 
-        [Parameter(Mandatory = $False)]
+        [Parameter(Mandatory = $True)]
         [string]$Header,
 
         [switch]$WhatIf
@@ -36,13 +36,13 @@ function Add-GPLHeader {
         [ValidateNotNullOrEmpty()]
         [string[]]$Path,
 
-        [Parameter(Mandatory = $False)]
+        [Parameter(Mandatory = $True)]
         [string]$ProgramName,
 
-        [Parameter(Mandatory = $False)]
+        [Parameter(Mandatory = $True)]
         [string]$ProgramDescription,
 
-        [Parameter(Mandatory = $False)]
+        [Parameter(Mandatory = $True)]
         [string]$Author,
 
         [switch]$WhatIf
@@ -68,10 +68,10 @@ function Add-MITHeader {
         [ValidateNotNullOrEmpty()]
         [string[]]$Path,
 
-        [Parameter(Mandatory = $False)]
+        [Parameter(Mandatory = $True)]
         [string]$ProgramName,
 
-        [Parameter(Mandatory = $False)]
+        [Parameter(Mandatory = $True)]
         [string]$Author,
         
         [switch]$WhatIf
@@ -243,6 +243,8 @@ function Start-PrependProcess {
         else {
             Add-PrependContent -Path $Path -Value $Header -WhatIf:$WhatIf.IsPresent 
         }
+
+        Format-SummaryTable -WhatIf:$WhatIf.IsPresent
     }
     catch [System.IO.DirectoryNotFoundException] {
         Write-Error -Message 'The following directory cannot be found: '+$Path
@@ -285,8 +287,13 @@ ${FileContents}
 "@
 
         Out-File -FilePath $Path -InputObject $ValuePrefixedToFile -WhatIf:$WhatIf.IsPresent
+
+        Set-SummaryTable -FileExtension $_.Extension -Modified $True
     }
     else {
+
+        Set-SummaryTable -FileExtension $_.Extension -Modified $False
+
         if ($Verbose.IsPresent) {
             Write-Verbose ("VERBOSE: Ignoring the operation 'Output to File' on unrecognized target: " + $_.FullName)
         }
@@ -294,6 +301,45 @@ ${FileContents}
             Write-Output -InputObject ("What if: Would ignore the operation 'Output to File' on unrecognized target: " + $_.FullName)
         }
     }
+}
+
+$SummaryTable = @{}
+function Set-SummaryTable {
+    Param
+    (
+        [Parameter(Mandatory = $True)]
+        [string]$FileExtension,
+
+        [Parameter(Mandatory = $True)]
+        [bool]$Modified
+    )
+    
+    if ($SummaryTable.ContainsKey($FileExtension) -eq $True) {
+        ($SummaryTable[$FileExtension].Count)++
+    }
+    else {
+        $YesNo = if ($Modified -eq $True) {'Yes'}else {'No'}
+        $NewEntry = [PSCustomObject]@{Count = 1; Modified = $YesNo}
+        $SummaryTable.Add($FileExtension, $NewEntry)
+    }
+}
+
+function Format-SummaryTable {
+    [CmdletBinding()]
+    Param
+    (
+        [switch]$WhatIf
+    )
+    
+    if ($WhatIf.IsPresent) {
+        Write-Output @"
+Since the 'WhatIf' was flagged, below is the *would have* summary:
+"@
+    }
+    Format-Table @{Label = "Found Files"; Expression = {($_.Name)}}, `
+    @{Label = "Count"; Expression = {($_.Value.Count)}}, `
+    @{Label = "Modified"; Expression = {($_.Value.Modified)}}`
+        -AutoSize -InputObject $SummaryTable
 }
 
 # ref: http://stackoverflow.com/a/24649481
