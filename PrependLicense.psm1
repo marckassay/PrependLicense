@@ -71,9 +71,10 @@ function Add-Header {
         [Parameter(Mandatory = $True)]
         [string]$Header,
 
-        [Parameter(Mandatory = $True)]
-        [ValidateNotNullOrEmpty()]
-        [string[]]$Include,
+        [Parameter(Mandatory = $False)]
+        [AllowEmptyString()]
+        [AllowNull()]
+        [string]$Include,
 
         [switch]$WhatIf
     )
@@ -216,8 +217,9 @@ function Start-PrependProcess {
         [string]$Header,
 
         [Parameter(Mandatory = $False)]
+        [AllowEmptyString()]
         [AllowNull()]
-        [string[]]$Include,
+        [string]$Include,
 
         [switch]$WhatIf
     )
@@ -237,7 +239,6 @@ function Start-PrependProcess {
 
         $IsContainer = Resolve-Path $Path | Test-Path -IsValid -PathType Container
         
-
         if ($IsContainer -eq $True) {
             Get-ChildItem -Path $Path -Recurse | ForEach-Object -Process {
                 if ($_.PSIsContainer -eq $False) {
@@ -246,7 +247,7 @@ function Start-PrependProcess {
             }
         }
         else {
-            Add-PrependContent -Path $Path -Value $Header -WhatIf:$WhatIf.IsPresent 
+            Add-PrependContent -Path $Path -Value $Header -Include $Include -WhatIf:$WhatIf.IsPresent 
         }
 
         Format-SummaryTable -WhatIf:$WhatIf.IsPresent
@@ -279,29 +280,38 @@ function Add-PrependContent {
         [string]$Value,
 
         [Parameter(Mandatory = $False)]
+        [AllowEmptyString()]
         [AllowNull()]
-        [string[]]$Include,
+        [string]$Include,
 
         [switch]$WhatIf
     )
 
-    $Brackets = Get-Item $Path | Select-Object { $_.Extension } -ExpandProperty Extension | Get-FileTypeBrackets
-
-    # if Include is defined and it does not contains current Extension, assign null to it...
-    if ($Include -ne $null -and $Include.Split(',').Contains('*' + $_.Extension) -eq $False) {
-        $Brackets = $null
-    }
-
-    if ($Brackets) {
+    # if Include is defined and it contains the current Extension...
+    if ($Include -and $Include.Split(',').Contains('*' + $_.Extension) -eq $True) {
         $FileContents = Get-Content $Path | Out-String
-
+        
         $ValuePrefixedToFile = @"
+${Value}
+${FileContents}
+"@
+    }
+    elseif (!$Include) {
+        $Brackets = Get-Item $Path | Select-Object { $_.Extension } -ExpandProperty Extension | Get-FileTypeBrackets
+
+        if ($Brackets) {
+            $FileContents = Get-Content $Path | Out-String
+
+            $ValuePrefixedToFile = @"
 $($Brackets.Opening.Trim())
 ${Value}
 $($Brackets.Closing.Trim())
 ${FileContents}
 "@
+        }
+    }
 
+    if ($ValuePrefixedToFile) {
         Out-File -FilePath $Path -InputObject $ValuePrefixedToFile -WhatIf:$WhatIf.IsPresent
 
         Set-SummaryTable -FileExtension $_.Extension -Modified $True
@@ -349,7 +359,7 @@ function Format-SummaryTable {
     if ($WhatIf.IsPresent) {
         Write-Output @"
 
-Since the 'WhatIf' was flagged, below is the what would of happened summary:
+Since the 'WhatIf' was switched, below is the what would of happened summary:
 "@
     }
     # $p.getenumerator() | Sort-Object -Property Value -Descending
@@ -402,8 +412,8 @@ function Get-FileTypeBrackets {
         if ($KeyFound) {
             $BracketsRaw = $BracketTable[$KeyFound]
             $Brackets = [PSCustomObject]@{
-                Opening = $BracketsRaw.Split(', ')[0]
-                Closing = $BracketsRaw.Split(', ')[1]
+                Opening = $BracketsRaw.Trim().Split(',')[0]
+                Closing = $BracketsRaw.Trim().Split(',')[1]
             }
         }
         else {

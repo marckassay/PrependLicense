@@ -1,0 +1,98 @@
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+Loading personal and system profiles took 1057ms.
+E:\> sl .\Temp\src\
+E:\Temp\src [master]>
+    >> $MarcsLicense = @"
+    >>  AS OF: JAN2018:
+    >>  DO NOT: 'SELL', 'TRADE' or 'EXCHANGE' CODE BELOW!!!
+    >> "@
+E:\Temp\src [master]> Add-Header -Path . -Header $MarcsLicense -WhatIf
+
+    The following license *would* be prepended to all recognized file types:
+    AS OF: JAN2018:
+    DO NOT: 'SELL', 'TRADE' or 'EXCHANGE' CODE BELOW!!!
+    Do you want to simulate what will happen?
+    [Y] Yes  [N] No  [?] Help (default is "N"): Y
+    What if: Would ignore the operation 'Output to File' on unrecognized target: E:\Temp\src\comp.m52
+    What if: Would ignore the operation 'Output to File' on unrecognized target: E:\Temp\src\comp.m53
+    What if: Performing the operation "Output to File" on target "E:\Temp\src\components.css".
+    What if: Performing the operation "Output to File" on target "E:\Temp\src\main.js".
+    What if: Performing the operation "Output to File" on target "E:\Temp\src\main.ts".
+
+    Since the 'WhatIf' was switched, below is the what would of happened summary:
+
+    Found Files Count Modified
+    ----------- ----- --------
+    .m52            1 No
+    .css            1 Yes
+    .m53            1 No
+    .js             1 Yes
+    .ts             1 Yes
+
+
+E:\Temp\src [master]> Add-Header -Path . -Header $MarcsLicense
+
+    The following license will be prepended to all recognized file types:
+    AS OF: JAN2018:
+    DO NOT: 'SELL', 'TRADE' or 'EXCHANGE' CODE BELOW!!!
+    Do you want to proceed?
+    [Y] Yes  [N] No  [?] Help (default is "N"): Y
+
+    Found Files Count Modified
+    ----------- ----- --------
+    .m52            1 No
+    .css            1 Yes
+    .m53            1 No
+    .js             1 Yes
+    .ts             1 Yes
+
+
+E:\Temp\src [master +0 ~3 -0 !]>
+    >> $MarcsLicense = @"
+    >> %% AS OF: JAN2018:
+    >> %% DO NOT: 'SELL', 'TRADE' or 'EXCHANGE' CODE BELOW!!!
+    >> "@
+E:\Temp\src [master +0 ~3 -0 !]> Add-Header -Path . -Header $MarcsLicense -Include '*.m52,*.m53' -WhatIf
+
+    The following license *would* be prepended to all recognized file types:
+    %% AS OF: JAN2018:
+    %% DO NOT: 'SELL', 'TRADE' or 'EXCHANGE' CODE BELOW!!!
+    Do you want to simulate what will happen?
+    [Y] Yes  [N] No  [?] Help (default is "N"): Y
+    What if: Performing the operation "Output to File" on target "E:\Temp\src\comp.m52".
+    What if: Performing the operation "Output to File" on target "E:\Temp\src\comp.m53".
+    What if: Would ignore the operation 'Output to File' on unrecognized target: E:\Temp\src\components.css
+    What if: Would ignore the operation 'Output to File' on unrecognized target: E:\Temp\src\main.js
+    What if: Would ignore the operation 'Output to File' on unrecognized target: E:\Temp\src\main.ts
+
+    Since the 'WhatIf' was switched, below is the what would of happened summary:
+
+    Found Files Count Modified
+    ----------- ----- --------
+    .m52            1 Yes
+    .css            1 No
+    .m53            1 Yes
+    .js             1 No
+    .ts             1 No
+
+
+E:\Temp\src [master +0 ~3 -0 !]> Add-Header -Path . -Header $MarcsLicense -Include '*.m52,*.m53'
+
+    The following license will be prepended to all recognized file types:
+    %% AS OF: JAN2018:
+    %% DO NOT: 'SELL', 'TRADE' or 'EXCHANGE' CODE BELOW!!!
+    Do you want to proceed?
+    [Y] Yes  [N] No  [?] Help (default is "N"): Y
+
+    Found Files Count Modified
+    ----------- ----- --------
+    .m52            1 Yes
+    .css            1 No
+    .m53            1 Yes
+    .js             1 No
+    .ts             1 No
+
+
+E:\Temp\src [master +0 ~5 -0 !]>
