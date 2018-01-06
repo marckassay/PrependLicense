@@ -287,21 +287,18 @@ function Add-PrependContent {
         [switch]$WhatIf
     )
 
+    $FileContents = Get-Item $Path -OutVariable File | Get-Content -Raw
     # if Include is defined and it contains the current Extension...
-    if ($Include -and $Include.Split(',').Contains('*' + $_.Extension) -eq $True) {
-        $FileContents = Get-Content $Path | Out-String
-        
+    if ($Include -and $Include.Split(',').Contains('*' + $File.Extension) -eq $True) {
         $ValuePrefixedToFile = @"
 ${Value}
 ${FileContents}
 "@
     }
     elseif (!$Include) {
-        $Brackets = Get-Item $Path | Select-Object { $_.Extension } -ExpandProperty Extension | Get-FileTypeBrackets
+        $Brackets = Get-FileTypeBrackets -FileExtension $File.Extension
 
         if ($Brackets) {
-            $FileContents = Get-Content $Path | Out-String
-
             $ValuePrefixedToFile = @"
 $($Brackets.Opening.Trim())
 ${Value}
@@ -310,15 +307,17 @@ ${FileContents}
 "@
         }
     }
-
+    
     if ($ValuePrefixedToFile) {
-        Out-File -FilePath $Path -InputObject $ValuePrefixedToFile -WhatIf:$WhatIf.IsPresent
+        $Encoding = Get-FileEncoding -File $File
+        # TODO: add/check value with constraints: unknown, string, unicode, bigendianunicode, utf8, utf7, utf32, ascii, default, oem
+        Out-File -FilePath $Path -InputObject $ValuePrefixedToFile -Encoding $Encoding -WhatIf:$WhatIf.IsPresent
 
-        Set-SummaryTable -FileExtension $_.Extension -Modified $True
+        Set-SummaryTable -FileExtension $File.Extension -Modified $True
     }
     else {
 
-        Set-SummaryTable -FileExtension $_.Extension -Modified $False
+        Set-SummaryTable -FileExtension $File.Extension -Modified $False
 
         if ($Verbose.IsPresent) {
             Write-Verbose ("VERBOSE: Ignoring the operation 'Output to File' on unrecognized target: " + $_.FullName)
@@ -400,8 +399,7 @@ function Get-FileTypeBrackets {
     [OutputType([PSCustomObject])]
     Param
     (
-        [Parameter(Mandatory = $True, ValueFromPipeline = $True)]
-        [AllowNull()]
+        [Parameter(Mandatory = $True)]
         [string]$FileExtension
     )
 
@@ -424,5 +422,25 @@ function Get-FileTypeBrackets {
         $Brackets
     }
 }
+
+function Get-FileEncoding {
+    [CmdletBinding()]
+    [OutputType([string])]
+    Param
+    (
+        [Parameter(Mandatory = $True)]
+        [FileInfo]$File
+    )
+    
+    $Encoding = New-Object -TypeName System.IO.StreamReader -ArgumentList $File.FullName -OutVariable Stream | `
+        Select-Object -ExpandProperty CurrentEncoding | `
+        Select-Object -ExpandProperty BodyName
+    $Stream.Dispose()
+
+    if ($Encoding.Contains('-')) {
+        $Encoding = $Encoding.Replace('-', '')
+    }
+}
+
 # "imports" $FileTypeTable and $BracketTable
 Invoke-Expression -Command (Get-Content -Raw -Path $PSScriptRoot'\PrependLicenseVariables.ps1')
