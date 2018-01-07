@@ -2,14 +2,23 @@
 PrependLicense is a PowerShell module that automates prepending license headers to code file(s).  
 
 ### Features
-* GPL and MIT license templates are predefined
-* Custom template is available via `Add-Header` function and for unknown types
+* Predefined GPL and MIT licenses 
+* Custom template is available via `Add-Header` function which can also be used for unknown file types
 * Simulate what will happen via `WhatIf` switch on any of the "Add" functions as listed below
+* Sensitive to DTD tags (<!DOCTYPE>) in HTML files
 
-### Cavet
-* In order to add license headers to files, this module needs to know the opening and closing comment brackets for each file type by extension.  This is predefined in the `PrependLicenseVariables.ps1` file.  Most likely you will need to modify this file for your needs or pass-in an inclusion string to `Add-Header` (read next paragraph).  A nice to have PR would be to modify these variables that are in this file via CLI.  And/or a PR with additional entries.  
+### Caveat
+* In order to add license headers to files, this module needs to know the opening and closing comment brackets for each file type by extension.  This is predefined in the `PrependLicenseVariables.ps1` file.  Most likely you will need to modify this file for your needs or pass-in an inclusion string to `Add-Header` (read next paragraph).
     
-    You can use the `Add-Header` to pass-in your own header with or without comment brackets included.  With the comment brackets included in the header, you can only target one type of file.  "Type" is being defined as having the same comment brackets.  See `Add-Header` function in the Usage section for more information.
+    You can use the `Add-Header` to pass-in your own header with or without comment brackets included.  With the comment brackets included in the header, you can only target one type of file (I'm using "type" as having the same comment brackets).  See `Add-Header` function in the Usage section for more information.
+
+* I developed this module for another repo of mine and you can see the [commit](https://github.com/marckassay/AIT/commit/8505bfbf50137fc4ef238f311f818c4ab7a0354b) I made with this module.  As of this typing, PrependLicense module worked as I intended in my environment.  My environment is:
+    - Windows 10
+    - PowerShell 5.1.16299.98
+    - code files that got prepended are UTF-8, primarily EOL of 'LF'
+    - I'm also using VSCode with Git, tslint and tsfmt
+
+* There may be an additional EOL added at the end of files that this module modifies.
 
 ## Instructions
 * To install with PowerShellGet run the following command below.  Or download project to your PowerShell Module directory.
