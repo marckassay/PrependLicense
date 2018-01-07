@@ -288,6 +288,12 @@ function Add-PrependContent {
     )
 
     $FileContents = Get-Item $Path -OutVariable File | Get-Content -Raw
+    if ($File.Extension -eq ".html") {
+        $HTMLDirective = $FileContents | Select-String -Pattern '.*DOCTYPE.*'
+        if ($HTMLDirective.Matches.Success) {
+            $FileContents = $FileContents.Replace($HTMLDirective.Matches.Value, "").Trim()
+        }
+    }
     # if Include is defined and it contains the current Extension...
     if ($Include -and $Include.Split(',').Contains('*' + $File.Extension) -eq $True) {
         $HeaderPrependedToValue = @"
@@ -309,6 +315,9 @@ ${FileContents}
     }
     
     if ($HeaderPrependedToValue) {
+        if($HTMLDirective.Matches.Success) {
+            $HeaderPrependedToValue = $HeaderPrependedToValue.Insert(0, $HTMLDirective.Matches.Value + "`r`n")
+        }
         Write-ContentsToFile -WhatIf:$WhatIf.IsPresent
 
         Set-SummaryTable -FileExtension $File.Extension -Modified $True
