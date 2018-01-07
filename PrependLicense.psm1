@@ -290,7 +290,7 @@ function Add-PrependContent {
     $FileContents = Get-Item $Path -OutVariable File | Get-Content -Raw
     # if Include is defined and it contains the current Extension...
     if ($Include -and $Include.Split(',').Contains('*' + $File.Extension) -eq $True) {
-        $ValuePrefixedToFile = @"
+        $HeaderPrependedToValue = @"
 ${Value}
 ${FileContents}
 "@
@@ -299,7 +299,7 @@ ${FileContents}
         $Brackets = Get-FileTypeBrackets -FileExtension $File.Extension
 
         if ($Brackets) {
-            $ValuePrefixedToFile = @"
+            $HeaderPrependedToValue = @"
 $($Brackets.Opening.Trim())
 ${Value}
 $($Brackets.Closing.Trim())
@@ -308,25 +308,19 @@ ${FileContents}
         }
     }
     
-    if ($ValuePrefixedToFile) {
-        if (!$WhatIf.IsPresent) {
-            Set-File
-        }
-        else {
-            Out-File -FilePath $Path -InputObject $ValuePrefixedToFile -WhatIf
-        }
-        
+    if ($HeaderPrependedToValue) {
+        Write-ContentsToFile -WhatIf:$WhatIf.IsPresent
+
         Set-SummaryTable -FileExtension $File.Extension -Modified $True
     }
     else {
-
         Set-SummaryTable -FileExtension $File.Extension -Modified $False
 
         if ($Verbose.IsPresent) {
-            Write-Verbose ("VERBOSE: Ignoring the operation 'Output to File' on unrecognized target: " + $_.FullName)
+            Write-Verbose ("VERBOSE: Ignoring unrecognized target: " + $_.FullName)
         }
         if ($WhatIf.IsPresent) {
-            Write-Output -InputObject ("What if: Would ignore the operation 'Output to File' on unrecognized target: " + $_.FullName)
+            Write-Output -InputObject ("What if: Would ignore modifying on unrecognized target: " + $_.FullName)
         }
     }
 }
@@ -370,7 +364,6 @@ Since the 'WhatIf' was switched, below is the what would of happened summary:
         -AutoSize -InputObject $SummaryTable
 }
 
-# ref: http://stackoverflow.com/a/24649481
 function Request-Confirmation {
     Param
     (
@@ -425,50 +418,75 @@ function Get-FileTypeBrackets {
     }
 }
 
-# $OutputEncoding
-# $OFS = $Info.LineEnding
-function Set-File {
+function Write-ContentsToFile {
     [CmdletBinding()]
 
-    [byte]$CR = 0x0D # 13
-    [byte]$LF = 0x0A # 10
+    [byte]$CR = 0x0D # 13  or  \r\n  or  `r`n
+    [byte]$LF = 0x0A # 10  or  \n    or  `n
 
     New-Object -TypeName System.IO.StreamReader -ArgumentList $Path -OutVariable StreamReader | Out-Null
 
     switch ($StreamReader.CurrentEncoding.WebName.Replace('-', '')) {
-        'utf8' { $Encoding = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false; break}
-        'utf7' { $Encoding = New-Object -TypeName System.Text.UTF7Encoding -ArgumentList $false; break}
-        'utf32' { $Encoding = New-Object -TypeName System.Text.UTF32Encoding -ArgumentList $false; break}
         'ascii' { $Encoding = New-Object -TypeName System.Text.ASCIIEncoding -ArgumentList $false; break}
-        'unicode' { $Encoding = New-Object -TypeName System.Text.UnicodeEncoding -ArgumentList $false; break}
-        'unicode' { $Encoding = New-Object -TypeName System.Text.Bi -ArgumentList $false; break}
-        default {$Encoding}
+        'utf7' { $Encoding = New-Object -TypeName System.Text.UTF7Encoding -ArgumentList $false; break}
+        'utf8' { $Encoding = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false; break}
+        'utf32' { $Encoding = New-Object -TypeName System.Text.UTF32Encoding -ArgumentList $false; break}
+        default { 
+            # for Out-File the default value is 'Unicode', so follow the same suit
+            $Encoding = New-Object -TypeName System.Text.UnicodeEncoding -ArgumentList $false;
+        }
     }
 
     New-Object -TypeName System.IO.BinaryReader -ArgumentList $StreamReader.BaseStream -OutVariable BinaryReader | Out-Null
     
     # this if statement is to determine the file's line endings and change the text that 
     # will be written to the file, if needed.
+    $EOL = ''
     if ($BinaryReader.BaseStream.CanRead -eq $true -and $BinaryReader.BaseStream.Length -gt 0) {
         $BinaryReader.BaseStream.Position = 0
         $BytesRead = $BinaryReader.ReadBytes($BinaryReader.BaseStream.Length)
         $IndexOfLF = $BytesRead.IndexOf($LF)
-
+        $RemoveLastLine = ($BytesRead.Get($BytesRead.Length - 1) -eq $LF)
+        
         if ($IndexOfLF) {
+            if ($RemoveLastLine) {
+                $HeaderPrependedToValue = $HeaderPrependedToValue.TrimEnd("`r`n")
+            }
             # check previous char for 'CR', if so this file has 'CRLF' for EOL
-            # and we shouldnt have to do anything.  but if this file has lone LF
-            # endings, edit $ValuePrefixedToFile to have just LF endings too and
-            # not CRLF which PowerShell seems to default to.  See - $OFS
+            # and we shouldnt have to do anything since PowerShell defaults to 
+            # the same EOL markings.  but if this file has lone LF endings, edit
+            # $HeaderPrependedToValue to have just LF endings too. Although the 
+            # following global PS variables may be benefical here, I'm considering
+            # individual files EOL markings.
+            # $OutputEncoding
+            # $OFS = $Info.LineEnding
             if ($BytesRead[$IndexOfLF - 1] -ne $CR) {
-                $ValuePrefixedToFile = $ValuePrefixedToFile -replace "\r", ""
+                $EOL = 'LF'
+
+                $HeaderPrependedToValue = $HeaderPrependedToValue -replace "`r", ""
+            }
+            else {
+                $EOL = 'CRLF'
             }
         }
     }
 
     $StreamReader.Close()
     $BinaryReader.Close()
-    
-    [System.IO.File]::WriteAllLines($Path, $ValuePrefixedToFile, $Encoding)
+    # $OFS = ""
+    if (!$WhatIf.IsPresent) {
+        [System.IO.File]::WriteAllLines($Path, $HeaderPrependedToValue, $Encoding)
+    }
+    else {
+        if ($EOL) {
+            Write-Output -InputObject ("What if: For file $Path, 
+will be encoded as '" + $Encoding.WebName + "' with end-of-line markings of '" + $EOL + "'")
+        }
+        else {
+            Write-Output -InputObject ("What if: For file $Path, 
+will be encoded as '" + $Encoding.WebName)
+        }
+    }
 }
 
 # "imports" $FileTypeTable and $BracketTable
