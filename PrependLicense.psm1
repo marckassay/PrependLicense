@@ -434,11 +434,21 @@ function Set-File {
     [byte]$LF = 0x0A # 10
 
     New-Object -TypeName System.IO.StreamReader -ArgumentList $Path -OutVariable StreamReader | Out-Null
-    # TODO: add/check value with constraints: unknown, string, unicode, bigendianunicode, utf8, utf7, utf32, ascii, default, oem
-    $Encoding = $StreamReader.CurrentEncoding.WebName.Replace('-', '')
+
+    switch ($StreamReader.CurrentEncoding.WebName.Replace('-', '')) {
+        'utf8' { $Encoding = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false; break}
+        'utf7' { $Encoding = New-Object -TypeName System.Text.UTF7Encoding -ArgumentList $false; break}
+        'utf32' { $Encoding = New-Object -TypeName System.Text.UTF32Encoding -ArgumentList $false; break}
+        'ascii' { $Encoding = New-Object -TypeName System.Text.ASCIIEncoding -ArgumentList $false; break}
+        'unicode' { $Encoding = New-Object -TypeName System.Text.UnicodeEncoding -ArgumentList $false; break}
+        'unicode' { $Encoding = New-Object -TypeName System.Text.Bi -ArgumentList $false; break}
+        default {$Encoding}
+    }
 
     New-Object -TypeName System.IO.BinaryReader -ArgumentList $StreamReader.BaseStream -OutVariable BinaryReader | Out-Null
     
+    # this if statement is to determine the file's line endings and change the text that 
+    # will be written to the file, if needed.
     if ($BinaryReader.BaseStream.CanRead -eq $true -and $BinaryReader.BaseStream.Length -gt 0) {
         $BinaryReader.BaseStream.Position = 0
         $BytesRead = $BinaryReader.ReadBytes($BinaryReader.BaseStream.Length)
@@ -446,9 +456,9 @@ function Set-File {
 
         if ($IndexOfLF) {
             # check previous char for 'CR', if so this file has 'CRLF' for EOL
-            # and we shouldnt have to do anything.  but if its a lone LF, edit 
-            # $ValuePrefixedToFile to have just LF and not CRLF which PowerShell seems to 
-            # default to.  See - $OFS
+            # and we shouldnt have to do anything.  but if this file has lone LF
+            # endings, edit $ValuePrefixedToFile to have just LF endings too and
+            # not CRLF which PowerShell seems to default to.  See - $OFS
             if ($BytesRead[$IndexOfLF - 1] -ne $CR) {
                 $ValuePrefixedToFile = $ValuePrefixedToFile -replace "\r", ""
             }
@@ -457,8 +467,8 @@ function Set-File {
 
     $StreamReader.Close()
     $BinaryReader.Close()
-  
-    Out-File -FilePath $Path -InputObject $ValuePrefixedToFile -Encoding $Encoding -NoNewline # -WhatIf:$WhatIf.IsPresent
+    
+    [System.IO.File]::WriteAllLines($Path, $ValuePrefixedToFile, $Encoding)
 }
 
 # "imports" $FileTypeTable and $BracketTable
