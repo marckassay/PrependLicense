@@ -251,7 +251,7 @@ function Start-PrependProcess {
         }
 
         Format-SummaryTable -WhatIf:$WhatIf.IsPresent
-        # clear table in-case if used again in same session...
+        # clear table to be used again in session...
         $SummaryTable.Clear()
     }
     catch [System.IO.DirectoryNotFoundException] {
@@ -309,10 +309,13 @@ ${FileContents}
     }
     
     if ($ValuePrefixedToFile) {
-        $Encoding = Get-FileEncoding -File $File
-        # TODO: add/check value with constraints: unknown, string, unicode, bigendianunicode, utf8, utf7, utf32, ascii, default, oem
-        Out-File -FilePath $Path -InputObject $ValuePrefixedToFile -Encoding $Encoding -WhatIf:$WhatIf.IsPresent
-
+        if (!$WhatIf.IsPresent) {
+            Set-File
+        }
+        else {
+            Out-File -FilePath $Path -InputObject $ValuePrefixedToFile -WhatIf
+        }
+        
         Set-SummaryTable -FileExtension $File.Extension -Modified $True
     }
     else {
@@ -337,7 +340,7 @@ function Set-SummaryTable {
         [Parameter(Mandatory = $True)]
         [bool]$Modified
     )
-    
+    # TODO: perhaps Group-Object can be used in here
     if ($SummaryTable.ContainsKey($FileExtension) -eq $True) {
         ($SummaryTable[$FileExtension].Count)++
     }
@@ -361,7 +364,6 @@ function Format-SummaryTable {
 Since the 'WhatIf' was switched, below is the what would of happened summary:
 "@
     }
-    # $p.getenumerator() | Sort-Object -Property Value -Descending
     Format-Table @{Label = "Found Files"; Expression = {($_.Name)}}, `
     @{Label = "Count"; Expression = {($_.Value.Count)}}, `
     @{Label = "Modified"; Expression = {($_.Value.Modified)}}`
@@ -423,23 +425,40 @@ function Get-FileTypeBrackets {
     }
 }
 
-function Get-FileEncoding {
+# $OutputEncoding
+# $OFS = $Info.LineEnding
+function Set-File {
     [CmdletBinding()]
-    [OutputType([string])]
-    Param
-    (
-        [Parameter(Mandatory = $True)]
-        [FileInfo]$File
-    )
-    
-    $Encoding = New-Object -TypeName System.IO.StreamReader -ArgumentList $File.FullName -OutVariable Stream | `
-        Select-Object -ExpandProperty CurrentEncoding | `
-        Select-Object -ExpandProperty BodyName
-    $Stream.Dispose()
 
-    if ($Encoding.Contains('-')) {
-        $Encoding = $Encoding.Replace('-', '')
+    [byte]$CR = 0x0D # 13
+    [byte]$LF = 0x0A # 10
+
+    New-Object -TypeName System.IO.StreamReader -ArgumentList $Path -OutVariable StreamReader | Out-Null
+    # TODO: add/check value with constraints: unknown, string, unicode, bigendianunicode, utf8, utf7, utf32, ascii, default, oem
+    $Encoding = $StreamReader.CurrentEncoding.WebName.Replace('-', '')
+
+    New-Object -TypeName System.IO.BinaryReader -ArgumentList $StreamReader.BaseStream -OutVariable BinaryReader | Out-Null
+    
+    if ($BinaryReader.BaseStream.CanRead -eq $true -and $BinaryReader.BaseStream.Length -gt 0) {
+        $BinaryReader.BaseStream.Position = 0
+        $BytesRead = $BinaryReader.ReadBytes($BinaryReader.BaseStream.Length)
+        $IndexOfLF = $BytesRead.IndexOf($LF)
+
+        if ($IndexOfLF) {
+            # check previous char for 'CR', if so this file has 'CRLF' for EOL
+            # and we shouldnt have to do anything.  but if its a lone LF, edit 
+            # $ValuePrefixedToFile to have just LF and not CRLF which PowerShell seems to 
+            # default to.  See - $OFS
+            if ($BytesRead[$IndexOfLF - 1] -ne $CR) {
+                $ValuePrefixedToFile = $ValuePrefixedToFile -replace "\r", ""
+            }
+        }
     }
+
+    $StreamReader.Close()
+    $BinaryReader.Close()
+  
+    Out-File -FilePath $Path -InputObject $ValuePrefixedToFile -Encoding $Encoding -NoNewline # -WhatIf:$WhatIf.IsPresent
 }
 
 # "imports" $FileTypeTable and $BracketTable
