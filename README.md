@@ -1,3 +1,5 @@
+[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/marckassay/PrependLicense/blob/master/LICENSE) [![PS Gallery](https://img.shields.io/badge/install-PS%20Gallery-blue.svg)](https://www.powershellgallery.com/packages/PrependLicense/)
+
 # PrependLicense
 PrependLicense is a PowerShell module that automates prepending license headers to code files. 
 
