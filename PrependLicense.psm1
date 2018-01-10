@@ -242,13 +242,13 @@ function Start-PrependProcess {
         if ($IsContainer -eq $True) {
             Get-ChildItem -Path $Path -Recurse | ForEach-Object -Process {
                 if ($_.PSIsContainer -eq $False) {
-                    Open-File -FilePath $_.FullName | Write-File -Header $Header -Include $Include -WhatIf:$WhatIf.IsPresent | Close-File
+                    Get-FileObject -FilePath $_.FullName -Header $Header -Include $Include -WhatIf:$WhatIf.IsPresent | `
+                        Write-File  | Write-Summary
                 }
             }
         }
         else {
-            # Add-PrependContent -Path $Path -Value $Header -Include $Include -WhatIf:$WhatIf.IsPresent 
-            Open-File | Write-File | Close-File
+            Get-FileObject -FilePath $_.FullName -Header $Header -Include $Include -WhatIf:$WhatIf.IsPresent | Write-File | Write-Summary
         }
 
         Format-SummaryTable -WhatIf:$WhatIf.IsPresent
@@ -273,19 +273,19 @@ function Set-SummaryTable {
     Param
     (
         [Parameter(Mandatory = $True)]
-        [string]$FileItem,
+        [string]$FileExtension,
 
         [Parameter(Mandatory = $True)]
         [bool]$Modified
     )
     # TODO: perhaps Group-Object can be used in here
-    if ($SummaryTable.ContainsKey($FileItem) -eq $True) {
-        ($SummaryTable[$FileItem].Count)++
+    if ($SummaryTable.ContainsKey($FileExtension) -eq $True) {
+        ($SummaryTable[$FileExtension].Count)++
     }
     else {
         $YesNo = if ($Modified -eq $True) {'Yes'} else {'No'}
         $NewEntry = [PSCustomObject]@{Count = 1; Modified = $YesNo}
-        $SummaryTable.Add($FileItem, $NewEntry)
+        $SummaryTable.Add($FileExtension, $NewEntry)
     }
 }
 
@@ -342,24 +342,20 @@ function Get-FileTypeBrackets {
         [string]$FileExtension
     )
 
-    process {
-    
-        $KeyFound = $FileTypeTable.GetEnumerator() | Where-Object -Property Value -Match $FileExtension | Select-Object -ExpandProperty Name
+    $KeyFound = $FileTypeTable.GetEnumerator() | Where-Object -Property Value -Match $FileExtension | Select-Object -ExpandProperty Name
 
-        if ($KeyFound) {
-            $BracketsRaw = $BracketTable[$KeyFound]
-            $Brackets = [PSCustomObject]@{
-                Opening = $BracketsRaw.Split(',')[0].Trim()
-                Closing = $BracketsRaw.Split(',')[1].Trim()
-            }
-        }
-        else {
-            $Brackets = $null
+    if ($KeyFound) {
+        $BracketsRaw = $BracketTable[$KeyFound]
+        $Brackets = [PSCustomObject]@{
+            Opening = $BracketsRaw.Split(',')[0].Trim()
+            Closing = $BracketsRaw.Split(',')[1].Trim()
         }
     }
-    end {
-        $Brackets
+    else {
+        $Brackets = $null
     }
+    
+    $Brackets
 }
 
 <#
@@ -377,61 +373,90 @@ Path to the file.
 An example
 
 .NOTES
-System.IO.BinaryReader is being used here to retrieve the line endings as I believe this is the only way it can be done.
+System.IO.BinaryReader is being used here to retrieve the line endings as I believe this is the only way it can be done.  All other "readers" (StreamReader, FileStream, etc) just show the chars and not CR or LF.
+
+UPDATE: maybe: String.ToByte(System.Globalization.CharUnicodeInfo)
 #>
-function Open-File {
+function Get-FileObject {
     [CmdletBinding()]
     Param
     (
         [Parameter(Mandatory = $True)]
-        [string]$FilePath
+        [string]$FilePath,
+
+        [Parameter(Mandatory = $True)]
+        [string]$Header,
+
+        [Parameter(Mandatory = $True)]
+        [AllowEmptyString()]
+        [AllowNull()]
+        [string]$Include,
+        
+        [switch]$WhatIf
     )
 
-    $FileItem = Get-Item -Path $FilePath
-    New-Object -TypeName System.IO.StreamReader -ArgumentList $FileItem.FullName -OutVariable StreamReader | Out-Null
-    # See NOTES for the function on why this is being used.
-    New-Object -TypeName System.IO.BinaryReader -ArgumentList $StreamReader.BaseStream -OutVariable BinaryReader | Out-Null
-
-    $FileAsString = $StreamReader.ReadToEnd();
-    
-    [byte]$CR = 0x0D # 13  or  \r\n  or  `r`n
-    [byte]$LF = 0x0A # 10  or  \n    or  `n
-    if ($BinaryReader.BaseStream.CanRead -eq $true -and $BinaryReader.BaseStream.Length -gt 0) {
-        $BinaryReader.BaseStream.Position = 0
-        $FileAsBytes = $BinaryReader.ReadBytes($BinaryReader.BaseStream.Length)
-        $IndexOfLF = $FileAsBytes.IndexOf($LF)
-        $RemoveLastLine = ($FileAsBytes.Get($FileAsBytes.Length - 1) -eq $LF)
-
-        $IndexOfLF = $FileAsBytes.IndexOf($LF)
-        if ($FileAsBytes[$IndexOfLF - 1] -ne $CR) {
-            $EOL = 'LF'
-        }
-        else {
-            $EOL = 'CRLF'
-        }
-    }
-    
-    
-
-    # this if statement is to determine the file's line endings and change the text that 
-    # will be written to the file, if needed.
-
-    $BinaryReader.Dispose()
-    $StreamReader.Dispose()
-
     $Data = [PsObject]@{
-        RemoveLastLine = $RemoveLastLine
-        FileItem       = $FileItem
-        EOL            = $EOL
-        FileAsString   = $FileAsString
-        Encoding       = ''
+        Header               = $Header
+        FileItem             = $null
+        FileAsString         = ''
+        EOL                  = ''
+        Encoding             = $null
+        EndsWithEmptyNewLine = $false
+        Brackets             = ''
+        ToInclude            = $false
+        WhatIf               = $WhatIf.IsPresent
     }
-    $Data 
+  
+    $Data.FileItem = Get-Item -Path $FilePath
+    if (!$Include) {
+        $Data.Brackets = Get-FileTypeBrackets -FileExtension $Data.FileItem.Extension
+    }
+    else {
+        if ($Include.Split(',').Contains('*' + $Data.FileItem.Extension) -eq $True) { 
+            $Data.ToInclude = $True
+        }
+    }
+
+    if ($Data.Brackets -or $Data.ToInclude) {
+        New-Object -TypeName System.IO.StreamReader -ArgumentList $Data.FileItem.FullName -OutVariable StreamReader | Out-Null
+        # See this function's NOTES on why this is being used.
+        New-Object -TypeName System.IO.BinaryReader -ArgumentList $StreamReader.BaseStream -OutVariable BinaryReader | Out-Null
+
+        $Data.FileAsString = $StreamReader.ReadToEnd();
+    
+        [byte]$CR = 0x0D # 13  or  \r\n  or  `r`n
+        [byte]$LF = 0x0A # 10  or  \n    or  `n
+        if ($BinaryReader.BaseStream.CanRead -eq $true -and $BinaryReader.BaseStream.Length -gt 0) {
+            $BinaryReader.BaseStream.Position = 0
+            $FileAsBytes = $BinaryReader.ReadBytes($BinaryReader.BaseStream.Length)
+            $IndexOfLF = $FileAsBytes.IndexOf($LF)
+            
+            $IndexOfLF = $FileAsBytes.IndexOf($LF)
+            if ($FileAsBytes[$IndexOfLF - 1] -ne $CR) {
+                $Data.EOL = 'LF'
+                $Data.EndsWithEmptyNewLine = ($FileAsBytes.Get($FileAsBytes.Length - 1) -eq $LF) -and `
+                ($FileAsBytes.Get($FileAsBytes.Length - 2) -eq $LF)
+            }
+            else {
+                $Data.EOL = 'CRLF'
+                $Data.EndsWithEmptyNewLine = ($FileAsBytes.Get($FileAsBytes.Length - 1) -eq $LF) -and `
+                ($FileAsBytes.Get($FileAsBytes.Length - 3) -eq $LF)
+            }
+        }
+
+        $BinaryReader.Close()
+        $StreamReader.Close()
+
+        $BinaryReader.Dispose()
+        $StreamReader.Dispose()
+    }
+
+    $Data
 }
 
 <#
 .SYNOPSIS
-From the variables set from Open-File, Write-File will make logically decisions on what and how the contents 
+From the variables set from Get-FileObject, Write-File will make logically decisions on what and how the contents 
 are arranged and written to file.
 
 .DESCRIPTION
@@ -457,57 +482,55 @@ function Write-File {
     Param
     (
         [Parameter(ValueFromPipeline = $True)]
-        [PsObject]$Data,
-
-        [Parameter(Mandatory = $True)]
-        [string]$Header,
-
-        [Parameter(Mandatory = $False)]
-        [AllowEmptyString()]
-        [AllowNull()]
-        [string]$Include,
-
-        [Parameter(Mandatory = $True)]
-        [switch]$WhatIf
+        [PsObject]$Data
+        <#
+        $Data = [PsObject]@{
+        Header         = $Header
+        FileItem       = $null
+        FileAsString   = ''
+        EOL            = ''
+        Encoding       = $null
+        EndsWithEmptyNewLine = $false
+        Brackets       = ''
+        ToInclude      = $false
+        WhatIf         = $WhatIf.IsPresent }
+        #>
     )
+    
+    if ($Data.Brackets -or $Data.ToInclude) {
 
-    New-Object -TypeName System.IO.StreamWriter -ArgumentList $Data.FileItem.FullName -OutVariable StreamWriter | Out-Null
+        New-Object -TypeName System.IO.StreamWriter -ArgumentList $Data.FileItem.FullName -OutVariable StreamWriter | Out-Null
+        # although, this is a get/set prop PowerShell cant set it; Flush() will be called below
+        # $StreamWriter.AutoFlush = $True
+        $Data.Encoding = $StreamWriter.Encoding
 
-    if ($Data.FileItem.Extension -eq ".html") {
-        $HTMLDirective = $Data.FileAsString | Select-String -Pattern '.*DOCTYPE.*'
-        if ($HTMLDirective.Matches.Success) {
-            $Data.FileAsString = $Data.FileAsString.Replace($HTMLDirective.Matches.Value, "").Trim()
+        # if this is a HTML file, remove and capture DTD tag.  this will be attached later in this function
+        if ($Data.FileItem.Extension -eq ".html") {
+            $DTDTagMatch = $Data.FileAsString | Select-String -Pattern '.*DOCTYPE.*'
+            if ($DTDTagMatch.Matches.Success) {
+                $Data.FileAsString = $Data.FileAsString.Replace($DTDTagMatch.Matches.Value, "").TrimStart()
+            }
         }
-    }
 
-    # if Include is defined and it contains the current Extension...
-    if ($Include -and $Include.Split(',').Contains('*' + $Data.FileItem.Extension) -eq $True) {
-        $HeaderPrependedToFileString = @"
-${Header}
-$($Data.FileAsString)
-"@
-    }
-    elseif (!$Include) {
-        $Brackets = Get-FileTypeBrackets -FileExtension $Data.FileItem.Extension
-
-        if ($Brackets) {
+        # if ToInclude is true just prepended header to file contents without brackets...
+        if ($Data.ToInclude) {
             $HeaderPrependedToFileString = @"
-$($Brackets.Opening)
 ${Header}
-$($Brackets.Closing)
 $($Data.FileAsString)
 "@
         }
-    }
-
-    if ($HeaderPrependedToFileString) {
-        #if ($Data.RemoveLastLine) {
-        #   $HeaderPrependedToFileString = $HeaderPrependedToFileString.TrimEnd("`r`n")
-        #}
+        else {
+            $HeaderPrependedToFileString = @"
+$($Data.Brackets.Opening)
+${Header}
+$($Data.Brackets.Closing)
+$($Data.FileAsString)
+"@
+        }
 
         # add the DTD tag at the very top of file, if there was one...
-        if ($HTMLDirective.Matches.Success) {
-            $HeaderPrependedToFileString = $HeaderPrependedToFileString.Insert(0, $HTMLDirective.Matches.Value + "`r`n")
+        if ($DTDTagMatch.Matches.Success) {
+            $HeaderPrependedToFileString = $HeaderPrependedToFileString.Insert(0, $DTDTagMatch.Matches.Value + "`r`n")
         }
     
         # check previous char for 'CR', if so this file has 'CRLF' for EOL
@@ -520,51 +543,81 @@ $($Data.FileAsString)
         # $OFS = $Info.LineEnding
         if ($Data.EOL -eq 'LF') {
             $HeaderPrependedToFileString = $HeaderPrependedToFileString -replace "`r", ""
+            if ($Data.EndsWithEmptyNewLine) {
+                $HeaderPrependedToFileString + "`n"
+            }
+        }
+        else {
+            if ($Data.EndsWithEmptyNewLine) {
+                $HeaderPrependedToFileString + "`r`n"
+            }
         }
 
-        if (!$WhatIf.IsPresent) {
+        if (!$Data.WhatIf) {
             $StreamWriter.WriteLine($HeaderPrependedToFileString)
-        } 
+            $StreamWriter.Flush()
+            $StreamWriter.Close()
+        } else {
+            $StreamWriter.Flush()
+            $StreamWriter.Close()
+        }
 
-        Set-SummaryTable -FileItem $Data.FileItem.FullName -Modified $True
-    }
-    else {
-        Set-SummaryTable -FileItem $Data.FileItem.FullName -Modified $False
+        try {
+            $StreamWriter.Dispose()
+        }
+        catch {
+            Write-Error ("PrependLicense is unable to write to file:" + $Data.FileItem.FullName)
+        }
     }
 
-    try {
-        $StreamWriter.Dispose()
-    }
-    catch {
-        Write-Host "!!!BinaryWriter or StreamWriter error!!!"
-    }
-    
-    $Data.Encoding = $StreamWriter.Encoding
     $Data
 }
 
-function Close-File {
+function Write-Summary {
     [CmdletBinding()]
     Param 
     (
         [Parameter(ValueFromPipeline = $True)]
         [PsObject]$Data
+        <#
+        $Data = [PsObject]@{
+        Header         = $Header
+        FileItem       = $null
+        FileAsString   = ''
+        EOL            = ''
+        Encoding       = $null
+        RemoveLastLine = $false
+        Brackets       = ''
+        ToInclude      = $false 
+        WhatIf         = $WhatIf.IsPresent }
+        #>
     )
 
-    if ($Data.EOL) {
-        Write-Output -InputObject ("What if: For file " + $Data.FileItem.FullName + ", 
-will be encoded as '" + $Data.Encoding.WebName + "' with end-of-line markings of '" + $Data.EOL + "'")
+    if ($Data.Brackets -or $Data.ToInclude) {
+        Set-SummaryTable -FileExtension $Data.FileItem.Extension -Modified $True
     }
     else {
-        Write-Output -InputObject ("What if: For file " + $Data.FileItem.FullName + ", 
-will be encoded as '" + $Data.Encoding.WebName)
+        Set-SummaryTable -FileExtension $Data.FileItem.Extension -Modified $false
     }
 
-    if ($Verbose.IsPresent) {
-        Write-Verbose ("VERBOSE: Ignoring unrecognized target: " + $Data.FileItem.FullName)
+    if ($Data.WhatIf) {
+        if ($Data.EOL) {
+            Write-Output -InputObject ("What if: For file " + $Data.FileItem.FullName + ", 
+will be encoded as '" + $Data.Encoding.WebName + "' with end-of-line markings of '" + $Data.EOL + "'")
+        }
+        else {
+            Write-Output -InputObject ("What if: For file " + $Data.FileItem.FullName + ", 
+will be encoded as '" + $Data.Encoding.WebName)
+        }
     }
-    if ($WhatIf.IsPresent) {
-        Write-Output -InputObject ("What if: Would ignore modifying on unrecognized target: " + $Data.FileItem.FullName)
+
+    if (!$Data.FileAsString) {
+        if ($Data.WhatIf) {
+            Write-Output -InputObject ("What if: Would ignore modifying on unrecognized target: " + $Data.FileItem.FullName)
+        }
+        elseif ($Verbose.IsPresent) {
+            Write-Verbose ("VERBOSE: Ignoring unrecognized target: " + $Data.FileItem.FullName)
+        }
     }
 }
 
