@@ -318,7 +318,7 @@ function Request-Confirmation {
     )
     
     if ($WhatIf.IsPresent -eq $false) {
-        $Question = 'Do you want to proceed?'
+        $Question = 'Do you want to proceed in modifying file(s)?'
     }
     else {
         $Question = 'Do you want to simulate what will happen?'
@@ -360,22 +360,11 @@ function Get-FileTypeBrackets {
 
 <#
 .SYNOPSIS
-Set variables for Write-File which is next in the pipeline
+Set variable in an object for Write-File which is next function in the pipeline
 
 .DESCRIPTION
-Opens StreamReader and BinaryReader to set variables for Write-File which is next in the pipeline.  This will
-close StreamReader and BinaryReader after all variables are set
-
-.PARAMETER Path
-Path to the file.
-
-.EXAMPLE
-An example
-
-.NOTES
-System.IO.BinaryReader is being used here to retrieve the line endings as I believe this is the only way it can be done.  All other "readers" (StreamReader, FileStream, etc) just show the chars and not CR or LF.
-
-UPDATE: maybe: String.ToByte(System.Globalization.CharUnicodeInfo)
+Opens StreamReader to set variables for Write-File which is next in the pipeline.  This will
+close StreamReader after all variables are set.
 #>
 function Get-FileObject {
     [CmdletBinding()]
@@ -411,40 +400,35 @@ function Get-FileObject {
     if (!$Include) {
         $Data.Brackets = Get-FileTypeBrackets -FileExtension $Data.FileItem.Extension
     }
-    else {
-        if ($Include.Split(',').Contains('*' + $Data.FileItem.Extension) -eq $True) { 
-            $Data.ToInclude = $True
-        }
+    elseif ($Include.Split(',').Where( {$_ -like ('*' + $Data.FileItem.Extension)})) {
+        $Data.ToInclude = $True
     }
 
     if ($Data.Brackets -or $Data.ToInclude) {
         New-Object -TypeName System.IO.StreamReader -ArgumentList $Data.FileItem.FullName -OutVariable StreamReader | Out-Null
-        # See this function's NOTES on why this is being used.
-        New-Object -TypeName System.IO.BinaryReader -ArgumentList $StreamReader.BaseStream -OutVariable BinaryReader | Out-Null
 
         $Data.FileAsString = $StreamReader.ReadToEnd();
-    
+
         [byte]$CR = 0x0D # 13  or  \r\n  or  `r`n
         [byte]$LF = 0x0A # 10  or  \n    or  `n
-        if ($BinaryReader.BaseStream.CanRead -eq $true -and $BinaryReader.BaseStream.Length -gt 0) {
-            $BinaryReader.BaseStream.Position = 0
-            $FileAsBytes = $BinaryReader.ReadBytes($BinaryReader.BaseStream.Length)
-            $IndexOfLF = $FileAsBytes.IndexOf($LF)
-            
-            $IndexOfLF = $FileAsBytes.IndexOf($LF)
-            if ($FileAsBytes[$IndexOfLF - 1] -ne $CR) {
-                $Data.EOL = 'LF'
-                $Data.EndsWithEmptyNewLine = ($FileAsBytes.Get($FileAsBytes.Length - 1) -eq $LF) -and `
-                ($FileAsBytes.Get($FileAsBytes.Length - 2) -eq $LF)
-            }
-            else {
-                $Data.EOL = 'CRLF'
-                $Data.EndsWithEmptyNewLine = ($FileAsBytes.Get($FileAsBytes.Length - 1) -eq $LF) -and `
-                ($FileAsBytes.Get($FileAsBytes.Length - 3) -eq $LF)
+        $FileAsBytes = [System.Text.Encoding]::ASCII.GetBytes($Data.FileAsString)
+        $FileAsBytesLength = $FileAsBytes.Length
+        $IndexOfLF = $FileAsBytes.IndexOf($LF)
+        if (($IndexOfLF -ne -1) -and ($FileAsBytes[$IndexOfLF - 1] -ne $CR)) {
+            $Data.EOL = 'LF'
+            if ($FileAsBytesLength) {
+                $Data.EndsWithEmptyNewLine = ($FileAsBytes.Get($FileAsBytesLength - 1) -eq $LF) -and `
+                ($FileAsBytes.Get($FileAsBytesLength - 2) -eq $LF)
             }
         }
-
-        $BinaryReader.Dispose()
+        else {
+            $Data.EOL = 'CRLF'
+            if ($FileAsBytesLength) {
+                $Data.EndsWithEmptyNewLine = ($FileAsBytes.Get($FileAsBytesLength - 1) -eq $LF) -and `
+                ($FileAsBytes.Get($FileAsBytesLength - 3) -eq $LF)
+            }
+        }
+        
         $StreamReader.Dispose()
     }
 
@@ -498,9 +482,10 @@ function Write-File {
         # If running in destructive mode (not in WhatIf) pass just the FullName to StreamWriter.
         # If running in destructive mode then it MUST have $True passed-in as second parameter 
         # which signifies to append.  Otherwise it will delete all contents of file.
-        if(!$Data.WhatIf) {
+        if (!$Data.WhatIf) {
             $StreamWriterArguments = $Data.FileItem.FullName
-        } else {
+        }
+        else {
             $StreamWriterArguments = @($Data.FileItem.FullName, $True)
         }
         New-Object -TypeName System.IO.StreamWriter -ArgumentList $StreamWriterArguments -OutVariable StreamWriter | Out-Null
@@ -553,26 +538,20 @@ $($Data.FileAsString)
                 $HeaderPrependedToFileString + "`n"
             }
         }
-        else {
-            if ($Data.EndsWithEmptyNewLine) {
-                $HeaderPrependedToFileString + "`r`n"
-            }
-        }
-
-        if (!$Data.WhatIf) {
-            $StreamWriter.Write($HeaderPrependedToFileString)
-            $StreamWriter.Flush()
-            $StreamWriter.Close()
-        }
-        else {
-            $StreamWriter.Close()
+        elseif ($Data.EndsWithEmptyNewLine) {
+            $HeaderPrependedToFileString + "`r`n"
         }
 
         try {
-            $StreamWriter.Dispose()
+            if (!$Data.WhatIf) {
+                $StreamWriter.Write($HeaderPrependedToFileString)
+            }
+            
+            $StreamWriter.Flush()
+            $StreamWriter.Close()
         }
         catch {
-            Write-Error ("PrependLicense is unable to write to file:" + $Data.FileItem.FullName)
+            Write-Error ("PrependLicense failed to call Dispose() successfully with: " + $Data.FileItem.FullName)
         }
     }
 
@@ -603,7 +582,7 @@ function Write-Summary {
         Set-SummaryTable -FileExtension $Data.FileItem.Extension -Modified $True
     }
     else {
-        Set-SummaryTable -FileExtension $Data.FileItem.Extension -Modified $false
+        Set-SummaryTable -FileExtension $Data.FileItem.Extension -Modified $False
     }
 
     if ($Data.WhatIf) {

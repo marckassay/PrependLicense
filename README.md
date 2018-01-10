@@ -10,7 +10,7 @@ PrependLicense is a PowerShell module that automates prepending license headers 
 * Prepending custom header is available via `Add-Header` function which can also be used for unknown file types
 * Simulate what will happen via `WhatIf` switch on any of the "Add" functions as listed below
 * Sensitive to DTD tags (`<!DOCTYPE>`) in HTML files
-* Attempts to preserve existing file encoding and to preserve end-of-line (EOL) markings
+* Preserves end-of-line (EOL) markings
 
 ## Caveat
 
@@ -26,8 +26,6 @@ Get-Module PrependLicense | Select-Object {$_.Path}
   * Windows 10
   * PowerShell 5.1.16299.98
   * UTF-8, primarily EOL of 'LF'
-
-* There seems to be a change of last EOL marking on files.  A ticket is opened for this [issue](https://github.com/marckassay/PrependLicense/issues/1).
 
 ## Instructions
 
