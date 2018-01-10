@@ -444,9 +444,6 @@ function Get-FileObject {
             }
         }
 
-        $BinaryReader.Close()
-        $StreamReader.Close()
-
         $BinaryReader.Dispose()
         $StreamReader.Dispose()
     }
@@ -456,7 +453,7 @@ function Get-FileObject {
 
 <#
 .SYNOPSIS
-From the variables set from Get-FileObject, Write-File will make logically decisions on what and how the contents 
+From the variables set from Get-FileObject, Write-File will make logical decisions on what and how the contents 
 are arranged and written to file.
 
 .DESCRIPTION
@@ -498,10 +495,16 @@ function Write-File {
     )
     
     if ($Data.Brackets -or $Data.ToInclude) {
+        # If running in destructive mode (not in WhatIf) pass just the FullName to StreamWriter.
+        # If running in destructive mode then it MUST have $True passed-in as second parameter 
+        # which signifies to append.  Otherwise it will delete all contents of file.
+        if(!$Data.WhatIf) {
+            $StreamWriterArguments = $Data.FileItem.FullName
+        } else {
+            $StreamWriterArguments = @($Data.FileItem.FullName, $True)
+        }
+        New-Object -TypeName System.IO.StreamWriter -ArgumentList $StreamWriterArguments -OutVariable StreamWriter | Out-Null
 
-        New-Object -TypeName System.IO.StreamWriter -ArgumentList $Data.FileItem.FullName -OutVariable StreamWriter | Out-Null
-        # although, this is a get/set prop PowerShell cant set it; Flush() will be called below
-        # $StreamWriter.AutoFlush = $True
         $Data.Encoding = $StreamWriter.Encoding
 
         # if this is a HTML file, remove and capture DTD tag.  this will be attached later in this function
@@ -533,14 +536,17 @@ $($Data.FileAsString)
             $HeaderPrependedToFileString = $HeaderPrependedToFileString.Insert(0, $DTDTagMatch.Matches.Value + "`r`n")
         }
     
-        # check previous char for 'CR', if so this file has 'CRLF' for EOL
-        # and we shouldnt have to do anything since PowerShell defaults to 
-        # the same EOL markings.  but if this file has lone LF endings, edit
-        # $HeaderPrependedToFileString to have just LF endings too. Although the 
-        # following global PS variables may be benefical here, I'm considering
-        # individual files EOL markings.
-        # $OutputEncoding
-        # $OFS = $Info.LineEnding
+        # if $Data.EOL equals 'CRLF' we shouldnt have to do anything since 
+        # PowerShell defaults to the same EOL markings (at least on Windows).
+        # but if this file has lone LF endings, edit $HeaderPrependedToFileString
+        # to have just LF endings too. 
+        #
+        # Although the following may be benefical here in some environments:
+        #  $OutputEncoding
+        #  $OFS = $Info.LineEnding
+        #  $StreamWriter.NewLine = $True (although, this is a get/set prop PowerShell
+        #       cant set it)
+        #  $TextWriter.CoreNewLine (StreamWriter inherits from this class)
         if ($Data.EOL -eq 'LF') {
             $HeaderPrependedToFileString = $HeaderPrependedToFileString -replace "`r", ""
             if ($Data.EndsWithEmptyNewLine) {
@@ -554,11 +560,11 @@ $($Data.FileAsString)
         }
 
         if (!$Data.WhatIf) {
-            $StreamWriter.WriteLine($HeaderPrependedToFileString)
+            $StreamWriter.Write($HeaderPrependedToFileString)
             $StreamWriter.Flush()
             $StreamWriter.Close()
-        } else {
-            $StreamWriter.Flush()
+        }
+        else {
             $StreamWriter.Close()
         }
 
