@@ -57,7 +57,6 @@ Below, `$MarcsLicense` is a header variable that is used with `Add-Header`.  The
 
 * the `Set-FileTypeTable` function was used.  With this function you can essentially remove and add file types along their corresponding comment brackets with `Set-BracketTable` function.  For more information, see these functions below.
 
-
 ```powershell
 $ $MarcsLicense = @"
    AS OF: JAN2018:
